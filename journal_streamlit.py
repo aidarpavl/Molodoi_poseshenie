@@ -11,7 +11,7 @@
     (или просто: python journal_streamlit.py — он сам запустит Streamlit)
 
 Записи сохраняются в journal_data.json рядом со скриптом.
-Голос → текст: микрофон в боковой панели, распознавание через Google (нужен интернет).
+Голос → текст: кнопка 🎤 рядом с каждым полем, распознавание через Google (нужен интернет).
 """
 
 import io
@@ -28,18 +28,6 @@ DATA_FILE = os.path.join(BASE_DIR, "journal_data.json")
 DOCX_NAME = "Өзара_сабаққа_қатысу_журналы.docx"
 
 KEYS = ["school", "bgzho", "date", "subject", "cls", "teacher", "topic", "goal", "visual", "notes"]
-LABELS = {
-    "school": "Мектеп аты",
-    "bgzho": "БҒӘЖО",
-    "date": "Мерзімі",
-    "subject": "Пәні",
-    "cls": "Сыныбы",
-    "teacher": "Пән мұғалімі",
-    "topic": "Сабақтың тақырыбы",
-    "goal": "Сабаққа қатысу мақсатым",
-    "visual": "Көрнекілігі",
-    "notes": "Өзіме түртіп алдым",
-}
 COLS_SPAN = ["Сабақ кезеңдері", "Іс - әрекеттер", "Әдіс - тәсілдер"]
 COLS_SPLIT = ["Сабақ кезеңдері", "Іс - әрекеттер (1)", "Іс - әрекеттер (2)", "Әдіс - тәсілдер"]
 LANGS = {"kk-KZ": "Қазақша", "ru-RU": "Русский"}
@@ -265,29 +253,21 @@ def append_text(old, new):
     return old + sep + new
 
 
-def target_options():
-    opts = {f"f_{k}": LABELS[k] for k in KEYS}
-    for i, t in enumerate(st.session_state.row_types):
-        names = COLS_SPLIT if t == "split" else COLS_SPAN
-        for j, n in enumerate(names):
-            opts[cell_key(i, j)] = f"Кесте {i + 1}-қатар · {n}"
-    return opts
-
-
 # ================================================================ колбэки
-def on_audio():
+def on_audio(target):
+    """Распознаёт запись из микрофона рядом с полем и дописывает текст в это поле."""
     ss = st.session_state
-    rec = ss.get(f"audio_{ss.audio_n}")
+    n = ss.mic_n.get(target, 0)
+    rec = ss.get(f"au_{target}_{n}")
     if rec is None:
         return
     text, err = transcribe(rec.getvalue(), ss.lang)
     if text:
-        tk = ss.target
-        ss[tk] = append_text(ss.get(tk, ""), text)
-        ss.voice_msg = ("ok", f"«{text}» → {target_options().get(tk, tk)}")
+        ss[target] = append_text(ss.get(target, ""), text)
+        ss.voice_msg = ("✅", f"«{text}»")
     else:
-        ss.voice_msg = ("err", err)
-    ss.audio_n += 1  # новый пустой микрофон для следующей записи
+        ss.voice_msg = ("⚠️", err)
+    ss.mic_n[target] = n + 1  # новый пустой рекордер для следующей записи
 
 
 def add_row(kind):
@@ -305,8 +285,6 @@ def del_row():
         for j in range(4):
             ss.pop(cell_key(i, j), None)
         ss.row_types.pop()
-        if ss.get("target", "").startswith(f"r{i}_"):
-            ss.target = "f_school"
 
 
 def clear_all():
@@ -314,104 +292,139 @@ def clear_all():
     s = fresh_state()
     s["lang"] = lang
     put_into_session(s)
-    st.session_state.target = "f_school"
+
+
+# ================================================================ виджеты
+def mic(container, key):
+    """Кнопка 🎤 рядом с полем: открывает рекордер, текст попадает в это поле."""
+    n = st.session_state.mic_n.get(key, 0)
+    with container.popover("🎤", help="Микрофон арқылы жазу"):
+        st.caption("Басып сөйлеңіз, біткен соң тоқтатыңыз")
+        st.audio_input("Микрофон", key=f"au_{key}_{n}", on_change=on_audio, args=(key,),
+                       label_visibility="collapsed")
+
+
+def field(label, key, area=False, height=None, container=None):
+    box = container or st
+    c1, c2 = box.columns([12, 1.3], vertical_alignment="bottom", gap="small")
+    if area:
+        c1.text_area(label, key=key, height=height)
+    else:
+        c1.text_input(label, key=key)
+    mic(c2, key)
+
+
+CSS = """
+<style>
+.stApp{background:#e9ebf1}
+.block-container,[data-testid="stMainBlockContainer"]{background:#fff;max-width:900px;
+  padding:2.2rem 2.6rem 3rem;margin-top:1.2rem;margin-bottom:2rem;border-radius:4px;
+  box-shadow:0 2px 14px rgba(34,36,43,.18)}
+.stTextInput input,.stTextArea textarea{font-family:"Times New Roman",Times,serif;font-size:18px;color:#050038}
+.stTextInput label p,.stTextArea label p{font-family:"Times New Roman",Times,serif;font-size:17px;color:#1a1a2e}
+.jr{font-family:"Times New Roman",Times,serif;text-align:center;color:#1a1a2e}
+.jr .t1{font-weight:700;font-size:19px}
+.jr .t2{font-weight:700;font-size:34px;line-height:1.35;margin:46px 0 14px}
+.jr .t3{font-weight:700;font-size:22px;margin-bottom:30px}
+.jr-h{font-family:"Times New Roman",Times,serif;font-weight:700;text-align:center;font-size:20px;margin:4px 0 8px}
+.tip{background:#fff8d6;border:1px solid #f0dc7a;border-radius:8px;padding:10px 14px;font-size:14px;line-height:1.45;margin-bottom:10px}
+.th{font-family:"Times New Roman",Times,serif;text-align:center;font-size:16px;border:1px solid #000;padding:6px 2px;margin-bottom:4px}
+@media (max-width:640px){.block-container,[data-testid="stMainBlockContainer"]{padding:1.2rem 1rem 2rem}
+  .jr .t2{font-size:26px;margin:26px 0 10px}}
+</style>
+"""
 
 
 # ================================================================ интерфейс
 def app():
     st.set_page_config(page_title="Өзара сабаққа қатысу журналы", page_icon="📘", layout="centered")
-    st.markdown("""
-    <style>
-    .stTextInput input, .stTextArea textarea{font-family:"Times New Roman",Times,serif;font-size:18px}
-    .jr-title{font-family:"Times New Roman",serif;text-align:center}
-    .jr-title .t1{font-weight:700;font-size:18px}
-    .jr-title .t2{font-weight:700;font-size:32px;line-height:1.3;margin:22px 0 8px}
-    .jr-title .t3{font-weight:700;font-size:20px;margin-bottom:10px}
-    .jr-h{font-family:"Times New Roman",serif;font-weight:700;text-align:center;font-size:20px;margin:6px 0}
-    </style>""", unsafe_allow_html=True)
+    st.markdown(CSS, unsafe_allow_html=True)
 
     ss = st.session_state
     if "init" not in ss:
         put_into_session(load_file())
-        ss.audio_n = 0
-        ss.target = "f_school"
+        ss.mic_n = {}
         ss.init = True
 
-    # ---------- боковая панель: микрофон ----------
-    with st.sidebar:
-        st.header("🎤 Дауыспен жазу")
-        st.selectbox("Дыбыс тілі", list(LANGS), format_func=LANGS.get, key="lang")
-        opts = target_options()
-        if ss.target not in opts:
-            ss.target = "f_school"
-        st.selectbox("Қай жолға жазамыз?", list(opts), format_func=opts.get, key="target")
-        st.audio_input("Микрофонды басып сөйлеңіз, біткен соң тоқтатыңыз",
-                       key=f"audio_{ss.audio_n}", on_change=on_audio)
-        msg = ss.pop("voice_msg", None)
-        if msg:
-            (st.success if msg[0] == "ok" else st.error)(msg[1])
-        st.caption("Танылған мәтін таңдалған жолдың соңына қосылады. "
-                   "Кейін оны пернетақтамен түзете аласыз. Интернет қажет.")
+    msg = ss.pop("voice_msg", None)
+    if msg:
+        st.toast(msg[1], icon=msg[0])
 
-    # ---------- титул ----------
-    st.markdown('<div class="jr-title"><div class="t1">Павлодар облысы білім беру басқармасының</div></div>',
+    # ---------- верхняя панель ----------
+    h1, h2 = st.columns([3, 1.4], vertical_alignment="bottom")
+    h1.markdown("### 📘 Өзара сабаққа қатысу журналы")
+    h2.selectbox("Дыбыс тілі", list(LANGS), format_func=LANGS.get, key="lang")
+    st.markdown('<div class="tip">🎤 Кез келген жолдың немесе кесте ұяшығының жанындағы микрофон '
+                'батырмасын басып сөйлеңіз — дауыс мәтінге айналып, сол жолға қосылады. '
+                'Жазылған мәтінді кейін <b>пернетақтамен</b> түзетіп немесе толықтыра аласыз. '
+                'Бәрі автоматты түрде сақталып отырады. (Дауысты тану үшін интернет қажет.)</div>',
                 unsafe_allow_html=True)
-    st.text_input("Мектеп аты", key="f_school")
-    st.markdown('<div class="jr-title"><div class="t2">Өзара сабаққа<br>қатысу журналы</div>'
+
+    # ---------- 1-бет: мұқаба ----------
+    st.markdown('<div class="jr"><div class="t1">Павлодар облысы білім беру басқармасының</div></div>',
+                unsafe_allow_html=True)
+    _, mid, _ = st.columns([1, 3, 1])
+    field("мектеп аты", "f_school", container=mid)
+    st.markdown('<div class="jr"><div class="t2">Өзара сабаққа<br>қатысу журналы</div>'
                 '<div class="t3">2026 – 2027 оқу жылы</div></div>', unsafe_allow_html=True)
-    _, right = st.columns([1, 1])
-    right.text_input("БҒӘЖО", key="f_bgzho")
+    _, right = st.columns([1.4, 1])
+    field("БҒӘЖО:", "f_bgzho", container=right)
 
     st.divider()
 
-    # ---------- лист посещения ----------
+    # ---------- 2-бет: қатысу парағы ----------
     st.markdown('<div class="jr-h">Өзара сабаққа қатынасу парағы</div>', unsafe_allow_html=True)
-    c1, c2, c3 = st.columns([2, 3, 1.3])
-    c1.text_input("Мерзімі", key="f_date")
-    c2.text_input("Пәні", key="f_subject")
-    c3.text_input("Сыныбы", key="f_cls")
-    st.text_input("Пән мұғалімі", key="f_teacher")
-    st.text_input("Сабақтың тақырыбы", key="f_topic")
-    st.text_area("Сабаққа қатысу мақсатым:", key="f_goal", height=120)
-    st.text_input("Көрнекілігі:", key="f_visual")
+    c1, c2, c3 = st.columns([2, 3, 1.6])
+    field("Мерзімі", "f_date", container=c1)
+    field("Пәні", "f_subject", container=c2)
+    field("Сыныбы", "f_cls", container=c3)
+    field("Пән мұғалімі", "f_teacher")
+    field("Сабақтың тақырыбы", "f_topic")
+    field("Сабаққа қатысу мақсатым:", "f_goal", area=True, height=130)
+    field("Көрнекілігі:", "f_visual")
 
-    st.markdown("#### Кесте")
+    # ---------- кесте ----------
+    st.write("")
+    hc = st.columns([1.2, 6.7, 2.1], gap="small")
+    for col, name in zip(hc, ["Сабақ кезеңдері", "Іс - әрекеттер", "Әдіс - тәсілдер"]):
+        col.markdown(f'<div class="th">{name}</div>', unsafe_allow_html=True)
     for i, t in enumerate(ss.row_types):
         with st.container(border=True):
-            st.caption(f"{i + 1}-қатар" + (" (Іс-әрекеттер екі бағанға бөлінген)" if t == "split" else ""))
             if t == "split":
-                cols = st.columns([1.2, 3.5, 3.2, 2.1])
+                cols = st.columns([1.2, 3.5, 3.2, 2.1], gap="small")
                 names = COLS_SPLIT
             else:
-                cols = st.columns([1.2, 6.7, 2.1])
+                cols = st.columns([1.2, 6.7, 2.1], gap="small")
                 names = COLS_SPAN
             for j, (col, n) in enumerate(zip(cols, names)):
-                col.text_area(n, key=cell_key(i, j), height=160 if i < 3 else 120)
+                k = cell_key(i, j)
+                col.text_area(n, key=k, height=170 if i < 3 else 120, label_visibility="collapsed",
+                              placeholder=n)
+                mic(col, k)
     b1, b2, b3 = st.columns(3)
-    b1.button("＋ Қатар қосу", on_click=add_row, args=("span",), use_container_width=True)
-    b2.button("＋ Бөлінген қатар", on_click=add_row, args=("split",), use_container_width=True)
-    b3.button("− Соңғы қатарды өшіру", on_click=del_row, use_container_width=True)
+    b1.button("＋ Қатар қосу", on_click=add_row, args=("span",))
+    b2.button("＋ Бөлінген қатар", on_click=add_row, args=("split",))
+    b3.button("− Соңғы қатарды өшіру", on_click=del_row)
 
-    st.text_area("Өзіме түртіп алдым:", key="f_notes", height=220)
+    field("Өзіме түртіп алдым:", "f_notes", area=True, height=240)
 
     # ---------- сохранение ----------
     s = collect_state()
     try:
         save_file(s)
-        saved_ok = True
+        saved = "✓ Автоматты сақталды " + datetime.now().strftime("%H:%M:%S")
     except OSError:
-        saved_ok = False
+        saved = "⚠ Файлға сақтау мүмкін болмады"
 
     st.divider()
-    d1, d2 = st.columns([2, 1])
+    d1, d2, d3 = st.columns([2.2, 1, 2], vertical_alignment="center")
     d1.download_button("📄 Word-қа сақтау (.docx)", data=build_docx(s), file_name=DOCX_NAME,
                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                       type="primary", use_container_width=True)
-    with d2.popover("Тазалау", use_container_width=True):
-        st.write("Барлық жазылған мәтін өшіріледі.")
+                       type="primary")
+    with d2.popover("Тазалау"):
+        st.write("Барлық жазылған мәтін өшіріледі. Жалғастырасыз ба?")
         st.button("Иә, бәрін өшіру", on_click=clear_all, type="primary")
-    st.caption(("✓ Автоматты сақталды " + datetime.now().strftime("%H:%M:%S")) if saved_ok
-               else "⚠ Файлға сақтау мүмкін болмады")
+    d3.caption(saved)
 
 
 # ================================================================ запуск
